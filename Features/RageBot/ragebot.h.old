@@ -1,0 +1,74 @@
+#pragma once
+
+struct AimPosition_t
+{
+public:
+	Vector      m_vecPoint = Vector(0.f, 0.f, 0.f), m_vecCenterPoint = Vector(0.f, 0.f, 0.f);
+	float       m_flFinalRadius = 0.f, m_flRadius = 0.f;
+
+public:
+	__forceinline AimPosition_t(const Vector& vecMultiPoint = Vector(0.f, 0.f, 0.f), const Vector& vecCenterPoint = Vector(0.f, 0.f, 0.f), const float& flFinalRadius = 0.f, const float& flRadius = 0.f)
+	{
+		m_vecPoint = vecMultiPoint;
+		m_vecCenterPoint = vecCenterPoint;
+		m_flFinalRadius = flFinalRadius;
+		m_flRadius = flRadius;
+	}
+};
+
+struct RageEntity_t
+{
+	C_CSPlayerPawn* pEntity;
+	int m_iIndex;
+	QAngle vecCalcAimPos;
+	Vector vecAimPosNonCalc;
+	LagRecord_t* pRecord;
+	std::int32_t hitbox;
+	float flHealth;
+	float flDamage;
+};
+
+class C_Ragebot
+{
+public:
+	C_CSWeaponBaseGun* ActiveWeapon = nullptr;
+	Vector ExtrapolatedEyePos;
+	std::vector<EHitBoxes> m_vecHitboxes;
+	int m_iMinDamage = 0;
+	bool bCanShootDuckPeekAssist = false;
+	bool bShouldPSilent = false;
+
+	bool bIsWeaponTaser = false;
+	bool bIsWeaponKnife = false;
+};
+
+struct ShootPoint_t
+{
+	Vector vecAimPos;
+	LagRecord_t* pRecord;
+	std::int32_t hitbox;
+	float flDamage;
+};
+
+namespace Ragebot
+{
+	inline std::vector<RageEntity_t> m_vecRageEntities;
+	inline C_Ragebot m_cRagebot;
+	inline RageEntity_t m_BestEntity;
+	inline std::vector<AimPosition_t> vecMultiPoints;
+
+	void TaserBot();
+	void KnifeBot();
+
+	void AutoStop(C_CSPlayerPawn* pLocal, C_CSWeaponBase* weapon, CUserCmd* cmd);
+	bool IsPlayerVisible(LagRecord_t* pRecord, CModelState pModel, C_CSPlayerPawn* pPlayer, Vector vecLocalEyePos);
+	bool ShouldAutostop(LagRecord_t* pLagRecord, C_CSPlayerPawn* pPawn, CModelState pModel, CUserCmd* pCmd);
+	bool IsAccurate(int nHitchance);
+
+	ShootPoint_t GetShootPoint(LagRecord_t* pRecord, CModelState pModel);
+
+	bool GetEntities();
+	void SetupHitboxes();
+
+	void CreateMove(C_CSPlayerPawn* pLocal, CCSGOInput* pInput, CUserCmd* cmd);
+}

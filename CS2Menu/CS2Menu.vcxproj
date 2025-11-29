@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>16.0</VCProjectVersion>
+    <ProjectGuid>{12345678-1234-1234-1234-123456789012}</ProjectGuid>
+    <RootNamespace>CS2Menu</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <TargetName>PhantomHack</TargetName>
+    <OutDir>$(ProjectDir)x64\Release\</OutDir>
+    <IncludePath>$(ProjectDir);$(ProjectDir)imgui;$(IncludePath)</IncludePath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>false</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_WINDOWS;_USRDLL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableUAC>false</EnableUAC>
+      <AdditionalDependencies>d3d11.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="dllmain.cpp" />
+    <ClCompile Include="imgui\imgui.cpp" />
+    <ClCompile Include="imgui\imgui_draw.cpp" />
+    <ClCompile Include="imgui\imgui_tables.cpp" />
+    <ClCompile Include="imgui\imgui_widgets.cpp" />
+    <ClCompile Include="imgui\imgui_demo.cpp" />
+    <ClCompile Include="imgui\backends\imgui_impl_dx11.cpp" />
+    <ClCompile Include="imgui\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="..\Features\ESP\ESP.cpp" />
+    <ClCompile Include="..\Features\BunnyHop\BunnyHop.cpp" />
+    <ClCompile Include="..\Features\FOV\FOV.cpp" />
+    <ClCompile Include="..\Features\NoScope\NoScope.cpp" />
+    <ClCompile Include="..\Features\Visuals\Watermark.cpp" />
+    <ClCompile Include="..\Features\Visuals\Glow.cpp" />
+    <ClCompile Include="..\Features\Aimbot\Aimbot.cpp" />
+    <ClCompile Include="..\Features\Misc\Triggerbot.cpp" />
+    <ClCompile Include="..\Features\Misc\AutoShot.cpp" />
+    <ClCompile Include="..\Core\GlobalVars.cpp" />
+    <ClCompile Include="..\Features\World\World.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Features\Offsets.h" />
+    <ClInclude Include="..\Features\Globals.h" />
+    <ClInclude Include="..\Features\ESP\ESP.h" />
+    <ClInclude Include="..\Features\BunnyHop\BunnyHop.h" />
+    <ClInclude Include="..\Features\FOV\FOV.h" />
+    <ClInclude Include="..\Features\NoScope\NoScope.h" />
+    <ClInclude Include="..\Features\Visuals\Watermark.h" />
+    <ClInclude Include="..\Features\Aimbot\Aimbot.h" />
+    <ClInclude Include="..\Features\Misc\Triggerbot.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

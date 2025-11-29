@@ -1,0 +1,932 @@
+#include "../../Precompiled.h"
+
+float CalculateLocalTicks(C_CSPlayerPawn* pLocalPawn)
+{
+	float flTicks = 0.f;
+	float flVelocity = pLocalPawn->m_vecAbsVelocity().Length2D();
+	bool bIsOnGround = (pLocalPawn->m_fFlags() & FL_ONGROUND);
+
+	if (bIsOnGround = false) return flTicks;
+
+	flTicks = (flVelocity / 75); 
+
+	return flTicks;
+}
+
+struct KnifeBotEntity_t
+{
+	C_CSPlayerPawn* pPawn;
+	CCSPlayerController* pController;
+	int iDistanceFromLocal;
+};
+
+void Ragebot::TaserBot()
+{
+	float flRange = m_cRagebot.ActiveWeapon->GetWeaponBaseVData()->m_flRange(); // slash range @TODO: make stab bot
+	bool bVisible = false;
+
+	std::vector<KnifeBotEntity_t> vecEntities;
+	for (auto pEntity : EntityList::vecEntities)
+	{
+		if (pEntity.m_eType != ENTITY_PLAYER) continue;
+
+		CCSPlayerController* pController = static_cast<CCSPlayerController*>(pEntity.m_pEntity);
+		if (!pController || !pController->m_bPawnIsAlive()) continue;
+
+		C_CSPlayerPawn* pPawn = pController->m_hPlayerPawn().Get();
+		if (!pPawn || !pPawn->IsEnemy(Globals::m_pLocalPlayerPawn)) continue;
+
+		int iDistance = pPawn->GetEyePosition().DistTo(/*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos());
+		if (iDistance > flRange) continue;
+
+		vecEntities.push_back(KnifeBotEntity_t(pPawn, pController, iDistance));
+	}
+
+	if (vecEntities.empty()) return;
+
+	KnifeBotEntity_t pBestEntity;
+	float flBestDistance = FLT_MAX;
+
+	// sort our new entity list
+	for (KnifeBotEntity_t pEntity : vecEntities)
+	{
+		if (pEntity.iDistanceFromLocal < flBestDistance)
+		{
+			flBestDistance = pEntity.iDistanceFromLocal;
+			pBestEntity = pEntity;
+		}
+	}
+
+	if (!pBestEntity.pPawn) return;
+
+	GameTrace_t trace = GameTrace_t();
+	TraceFilter_t filter = TraceFilter_t(0x1C3003, Globals::m_pLocalPlayerPawn, nullptr, 4);
+	Ray_t ray = Ray_t();
+
+	Interfaces::m_pGameTraceManager->TraceShape(&ray, /*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos(), Globals::m_pLocalPlayerPawn->m_pGameSceneNode()->GetSkeletonInstance()->m_pBoneCache->GetOrigin(6), &filter, &trace);
+	if (!trace.IsVisible( ))
+		return;
+
+
+
+	QAngle vecCalcAimPos = Math::CalcAngle(/*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos(), pBestEntity.pPawn->GetEyePosition());
+
+	Globals::m_pCmd->SetSubTickAngle(vecCalcAimPos);
+
+	// probably doesnt do anything
+	Globals::m_pCmd->m_csgoUserCmd.set_attack1_start_history_index(Globals::m_pCmd->m_csgoUserCmd.input_history_size() - 1);
+
+	Globals::m_pCmd->m_nButtons.m_nValue |= IN_ATTACK;
+	Globals::m_pCmd->m_nButtons.m_nValueChanged |= IN_ATTACK;
+}
+
+void Ragebot::KnifeBot()
+{
+	float flRange = 75.f/*m_cRagebot.ActiveWeapon->GetWeaponBaseVData()->m_flRange()*/; // slash range @TODO: make stab bot
+
+	std::vector<KnifeBotEntity_t> vecEntities;
+	for (auto pEntity : EntityList::vecEntities)
+	{
+		if (pEntity.m_eType != ENTITY_PLAYER) continue;
+
+		CCSPlayerController* pController = static_cast<CCSPlayerController*>(pEntity.m_pEntity);
+		if (!pController || !pController->m_bPawnIsAlive()) continue;
+
+		C_CSPlayerPawn* pPawn = pController->m_hPlayerPawn().Get();
+		if (!pPawn || !pPawn->IsEnemy(Globals::m_pLocalPlayerPawn)) continue;
+
+		int iDistance = pPawn->m_pGameSceneNode()->GetBonePosition(EBones::PELVIS).DistTo(/*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos());
+		if (iDistance > flRange) continue;
+
+		vecEntities.push_back(KnifeBotEntity_t(pPawn, pController, iDistance));
+	}
+
+	if (vecEntities.empty()) return;
+
+	KnifeBotEntity_t pBestEntity;
+	float flBestDistance = FLT_MAX;
+
+	// sort our new entity list
+	for (KnifeBotEntity_t pEntity : vecEntities)
+	{
+		if (pEntity.iDistanceFromLocal < flBestDistance)
+		{
+			flBestDistance = pEntity.iDistanceFromLocal;
+			pBestEntity = pEntity;
+		}
+	}
+
+	if (!pBestEntity.pPawn) return;
+
+	QAngle vecCalcAimPos = Math::CalcAngle(/*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos(), pBestEntity.pPawn->GetEyePosition());
+
+	Globals::m_pCmd->SetSubTickAngle(vecCalcAimPos);
+
+	// probably doesnt do anything
+	Globals::m_pCmd->m_csgoUserCmd.set_attack2_start_history_index(Globals::m_pCmd->m_csgoUserCmd.input_history_size() - 1);
+
+	Globals::m_pCmd->m_nButtons.m_nValue |= IN_ATTACK;
+	Globals::m_pCmd->m_nButtons.m_nValueChanged |= IN_ATTACK;
+}
+
+void Ragebot::AutoStop(C_CSPlayerPawn* pLocal, C_CSWeaponBase* weapon, CUserCmd* cmd)
+{
+	if (Config::b(g_Variables.m_Ragebot.m_bNoSpread) && Input::HandleInput(Config::kb(g_Variables.m_Ragebot.m_iNoSpreadKey)))
+		return;
+
+	if (Convar::weapon_accuracy_nospread->m_value.m_i1)
+		return;
+
+	if (m_cRagebot.bIsWeaponKnife || m_cRagebot.bIsWeaponTaser)
+		return;
+
+	if (cmd->m_nButtons.m_nValue & IN_DUCK || !pLocal || !weapon)
+		return;
+
+	if (!(Globals::m_pLocalPlayerPawn->m_fFlags() & FL_ONGROUND))
+			return;
+
+	CBaseUserCmdPB* pBaseCmd = Globals::m_pBaseCmd;
+	if (!pBaseCmd)
+		return;
+
+	pBaseCmd->set_leftmove(0.0f);
+	pBaseCmd->set_forwardmove(pLocal->m_vecVelocity().Length2D() > 20.0f ? 1.0f : 0.0f);
+
+	QAngle angViewAngles = Interfaces::m_pInput->GetViewAngles();
+
+	float flYaw = pLocal->m_vecVelocity().ToAngles().y + 180.0f;
+	float flRotation = M_DEG2RAD(angViewAngles.y - flYaw);
+
+	float flCosRotation = std::cos(flRotation);
+	float flSinRotation = std::sin(flRotation);
+
+	float flNewForwardMove = flCosRotation * pBaseCmd->forwardmove() - flSinRotation * pBaseCmd->leftmove();
+	float flNewSideMove = flSinRotation * pBaseCmd->forwardmove() + flCosRotation * pBaseCmd->leftmove();
+
+	pBaseCmd->set_forwardmove(flNewForwardMove);
+	pBaseCmd->set_leftmove(-flNewSideMove);
+}
+
+//Interfaces::m_pClient->GetDebugOverlay()->AddTextOverlay(vecExtrapolated, 0.01, ".");
+
+Vector GetExtrapolatedEyePos()
+{
+	return Math::ExtrapolateTick(/*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos(), Globals::m_pLocalPlayerPawn->m_vecAbsVelocity(), CalculateLocalTicks(Globals::m_pLocalPlayerPawn)/*Config::f(g_Variables.m_Ragebot.m_flShootTicksLocal)*/);
+}
+
+Vector ExtrapolateEnemyPos(Vector vecPos, C_CSPlayerPawn* pPawn)
+{
+	return Math::ExtrapolateTick(vecPos, pPawn->m_vecAbsVelocity(), Config::f(g_Variables.m_Ragebot.m_flShootTicks));
+}
+
+bool Ragebot::IsPlayerVisible(LagRecord_t* pRecord, CModelState pModel, C_CSPlayerPawn* pPlayer, Vector vecLocalEyePos)
+{
+	Interfaces::m_pClient->GetDebugOverlay()->AddBoxOverlay(vecLocalEyePos, Vector(-2.f, -2.f, -2.f), Vector(2.f, 2.f, 2.f), QAngle(0.0f, 0.0f, 0.0f), Color(255, 0, 0, 80), 0.1f);
+
+	CHitBox* pLeftArmHitbox = pModel.m_modelHandle->GetHitBox(static_cast<EHitBoxes>(EHitBoxes::HITBOX_LEFT_UPPER_ARM));
+	CHitBox* pRightArmHitbox = pModel.m_modelHandle->GetHitBox(static_cast<EHitBoxes>(EHitBoxes::HITBOX_RIGHT_UPPER_ARM));
+	CHitBox* pHeadHitbox = pModel.m_modelHandle->GetHitBox(static_cast<EHitBoxes>(EHitBoxes::HITBOX_HEAD));
+
+	if (!pLeftArmHitbox || !pRightArmHitbox || !pHeadHitbox)
+		return false;
+
+	auto IsHitboxVisible = [&](CHitBox* pHitbox, bool isHead = false) -> bool
+		{
+			int boneIndex = pPlayer->LookupBone(pHitbox->m_sBoneName);
+
+			if (boneIndex < 0 || boneIndex >= pRecord->m_Matrix.size())
+				return false;
+
+			// Calculate the hitbox's transformed center
+			Vector transformedCenter = (pHitbox->m_vecMinBounds + pHitbox->m_vecMaxBounds) * 0.5f;
+			Vector checkPoint = transformedCenter.Transform(pRecord->m_Matrix[boneIndex].TranslateToMatrix3x4());
+
+			if (isHead)
+				checkPoint.z += 4.0f; 
+
+#ifdef _DEBUG
+			// Interfaces::m_pClient->GetDebugOverlay()->AddBoxOverlay(
+			//     checkPoint, Vector(-2.f, -2.f, -2.f), Vector(2.f, 2.f, 2.f),
+			//     QAngle(0.0f, 0.0f, 0.0f), Color(255, 0, 0, 80), 0.1f);
+#endif
+			// @TODO: ExtrapolateEnemyPos() on checkPoint
+			return Autowall::Firebullet(vecLocalEyePos, checkPoint, Globals::m_pLocalPlayerPawn, pRecord->m_pPawn, m_cRagebot.ActiveWeapon->GetWeaponBaseVData()) > (m_cRagebot.m_iMinDamage);
+		};
+
+	return IsHitboxVisible(pLeftArmHitbox) ||
+		IsHitboxVisible(pRightArmHitbox) ||
+		IsHitboxVisible(pHeadHitbox, true);
+}
+
+bool Ragebot::ShouldAutostop(LagRecord_t* pLagRecord, C_CSPlayerPawn* pPawn, CModelState pModel, CUserCmd* pCmd)
+{
+	if (IsPlayerVisible(pLagRecord, pModel, pPawn, m_cRagebot.ExtrapolatedEyePos))
+	{
+		Ragebot::AutoStop(Globals::m_pLocalPlayerPawn, m_cRagebot.ActiveWeapon, pCmd);
+		return true;
+	}
+	return false;
+}
+
+bool Ragebot::IsAccurate(int nHitchance)
+{
+	if (Config::b(g_Variables.m_Ragebot.m_bNoSpread) && Input::HandleInput(Config::kb(g_Variables.m_Ragebot.m_iNoSpreadKey)))
+		return true;
+
+	if (nHitchance == 0 || Convar::weapon_accuracy_nospread->m_value.m_i1)
+		return true;
+
+	C_CSWeaponBase* pWeapon = m_cRagebot.ActiveWeapon;
+	if (!pWeapon)
+		return false;
+
+	const int nWantedHitCount = 255;
+	Vector vecForward = Vector(0, 0, 0), vecRight = Vector(0, 0, 0), vecUp = Vector(0, 0, 0);
+	m_BestEntity.vecCalcAimPos.ToDirections(&vecForward, &vecRight, &vecUp);
+
+	const Vector vecSource = LocalPlayerData::m_vecEyePosition;
+	int nHits = 0;
+	const int nNeededHits = static_cast<int>(nWantedHitCount * (nHitchance / 100.f));
+
+	const float flWeaponSpread = pWeapon->GetSpread();
+	const float flWeaponInaccuracy = pWeapon->GetInaccuracy();
+
+	TraceFilter_t filter(0x1C3003, Globals::m_pLocalPlayerPawn, nullptr, 4);
+
+	for (int i = 0; i < nWantedHitCount; i++)
+	{
+		float a = Math::fnRandomFloat(0.f, 1.f);
+		float b = Math::fnRandomFloat(0.f, 2.f * DirectX::XM_PI);
+		const float c = Math::fnRandomFloat(0.f, 1.f);
+		const float d = Math::fnRandomFloat(0.f, 2.f * DirectX::XM_PI);
+
+		const float flInaccuracy = a * flWeaponInaccuracy;
+		const float flSpread = c * flWeaponSpread;
+
+		if (m_cRagebot.ActiveWeapon->m_AttributeManager()->m_Item()->m_iItemDefinitionIndex() == WEAPON_R8_REVOLVER)
+		{
+			a = 1.f - a * a;
+			a = 1.f - c * c;
+		}
+
+		Vector vecSpreadView((cos(b) * flInaccuracy) + (cos(d) * flSpread), (sin(b) * flInaccuracy) + (sin(d) * flSpread), 0), vecDirection = Vector(0, 0, 0);
+
+		vecDirection.x = vecForward.x + (vecSpreadView.x * vecRight.x) + (vecSpreadView.y * vecUp.x);
+		vecDirection.y = vecForward.y + (vecSpreadView.x * vecRight.y) + (vecSpreadView.y * vecUp.y);
+		vecDirection.z = vecForward.z + (vecSpreadView.x * vecRight.z) + (vecSpreadView.y * vecUp.z);
+		vecDirection = vecDirection.Normalized();
+
+		QAngle angViewSpread{};
+		Math::VectorAngles(vecDirection, angViewSpread);
+		angViewSpread = angViewSpread.Normalize();
+
+		Vector vecViewForward;
+		Vector vecViewRight;
+		Vector vecViewUp;
+		angViewSpread.ToDirections(&vecViewForward, &vecViewRight, &vecViewUp);
+		vecViewForward.NormalizeInPlace();
+		vecViewForward = vecSource + (vecViewForward * m_cRagebot.ActiveWeapon->GetWeaponBaseVData()->m_flRange());
+
+		Ray_t ray = Ray_t();
+		GameTrace_t trace = GameTrace_t();
+		Interfaces::m_pGameTraceManager->ClipRayToEntity(&ray, vecSource, vecViewForward, m_BestEntity.pEntity, &filter, &trace);
+
+		if (trace.m_pHitEntity == m_BestEntity.pEntity/* && trace.GetHitgroup() == hitgroup <- TODO*/)
+			nHits++;
+
+		const int nHitChance = static_cast<int>((static_cast<float>(nHits) / nWantedHitCount) * 100.f);
+		if (nHitChance >= nHitchance)
+			return true;
+
+		if ((nWantedHitCount - i + nHits) < nNeededHits)
+			return false;
+	}
+
+	return false;
+}
+
+void AddMultipoints(Vector vecPoint, Vector vecCenter, int& iMultiPointAmount, float flHeadFinalRadius = 0.f, float flRadius = 0.f)
+{
+	++iMultiPointAmount;
+	Ragebot::vecMultiPoints.emplace_back(vecPoint, vecCenter, flHeadFinalRadius, flRadius);
+}
+
+void Multipoints(LagRecord_t* pRecord, CHitBox* pHitBox, C_CSPlayerPawn* pPlayer, int nHitboxIndex)
+{
+	if (!pPlayer)
+		return;
+
+	CGameSceneNode* pGameSceneNode = pPlayer->m_pGameSceneNode();
+	if (!pGameSceneNode)
+		return;
+
+	CSkeletonInstance* pSkeleton = pGameSceneNode->GetSkeletonInstance();
+	if (!pSkeleton)
+		return;
+
+	CModelState modelState = pSkeleton->m_modelState();
+	CStrongHandle<CModel> pModel = modelState.m_modelHandle;
+	if (!pModel)
+		return;
+
+	CHitBox* pHitbox = pModel->GetHitBox(nHitboxIndex);
+	if (!pHitbox)
+		return;
+
+	const EHitBoxes Hitboxes = static_cast<EHitBoxes>(nHitboxIndex);
+
+	const int32_t nGroup = Utilities::HitboxToHitgroup(Hitboxes);
+	if (nGroup == static_cast<int>(EHitgroups::HITGROUP_GENERIC))
+		return;
+
+	pRecord->Apply(pPlayer);
+
+	int iMultiPointsCount = 1;
+	const float flHeadScale = Config::i(g_Variables.m_Ragebot.m_iHeadPointscale) / 100.f;
+	const float flBodyScale = Config::i(g_Variables.m_Ragebot.m_iBodyPointscale) / 100.f;
+	const float flScale = nGroup == static_cast<int>(EHitgroups::HITGROUP_HEAD) ? flHeadScale : flBodyScale;
+
+	const float flRadius = pHitbox->m_flShapeRadius;
+	const int nBoneIndex = pPlayer->LookupBone(pHitbox->m_sBoneName);
+	if (flRadius > 0.f)
+	{
+		Vector vecCapsuleCenters[2];
+		vecCapsuleCenters[0] = pHitbox->m_vecMinBounds.Transform(pRecord->m_Matrix[nBoneIndex].TranslateToMatrix3x4());
+		vecCapsuleCenters[1] = pHitbox->m_vecMaxBounds.Transform(pRecord->m_Matrix[nBoneIndex].TranslateToMatrix3x4());
+
+		Vector vecCapsuleCoreNormal = (vecCapsuleCenters[0] - vecCapsuleCenters[1]).Normalized();
+
+		Matrix3x4_t matCapsuleRotationSpace;
+		Math::VectorMatrix(Vector(0.f, 0.f, 1.f), matCapsuleRotationSpace);
+
+		Matrix3x4_t matCapsuleSpace;
+		Math::VectorMatrix(vecCapsuleCoreNormal, matCapsuleSpace);
+
+		std::vector<Vector> vecCapsulePoints;
+		vecCapsulePoints.push_back({ 0.0f, 0.0f, 0.0f });
+
+		if (!(!Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes)[HB_HEAD] && nGroup == static_cast<int>(EHitgroups::HITGROUP_HEAD) ||
+			!Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes)[HB_CHEST] && nGroup == static_cast<int>(EHitgroups::HITGROUP_NECK) ||
+			!Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes)[HB_CHEST] && nGroup == static_cast<int>(EHitgroups::HITGROUP_CHEST) ||
+			!Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes)[HB_STOMACH] && nGroup == static_cast<int>(EHitgroups::HITGROUP_STOMACH) ||
+			!Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes)[HB_ARMS] && (nGroup == static_cast<int>(EHitgroups::HITGROUP_LEFTARM) || nGroup == static_cast<int>(EHitgroups::HITGROUP_RIGHTARM)) ||
+			!Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes)[HB_LEGS] && (nGroup == static_cast<int>(EHitgroups::HITGROUP_LEFTLEG) || nGroup == static_cast<int>(EHitgroups::HITGROUP_RIGHTLEG)) ||
+			!Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes)[HB_FEET] && (nGroup == static_cast<int>(EHitgroups::HITGROUP_LEFTLEG) || nGroup == static_cast<int>(EHitgroups::HITGROUP_LEFTLEG))))
+		{
+			// TODO@Monster: run some of the points based on the yaw.
+			switch (Interfaces::m_pGlobalVariables->m_nTickCount % 8)
+			{
+			case 0:
+				vecCapsulePoints.push_back({ -0.01f, -0.01f, 1.0f });
+				break;
+			case 1:
+				vecCapsulePoints.push_back({ 0.51f, 0.0f, 0.86f });
+				vecCapsulePoints.push_back({ 0.25f, 0.44f, 0.86f });
+				vecCapsulePoints.push_back({ -0.26f, 0.44f, 0.86f });
+				vecCapsulePoints.push_back({ -0.51f, 0.0f, 0.86f });
+				vecCapsulePoints.push_back({ -0.26f, -0.45f, 0.86f });
+				vecCapsulePoints.push_back({ 0.25f, -0.45f, 0.86f });
+				break;
+			case 2:
+				vecCapsulePoints.push_back({ 0.86f, 0.0f, 0.51f });
+				vecCapsulePoints.push_back({ 0.43f, 0.75f, 0.51f });
+				vecCapsulePoints.push_back({ -0.44f, 0.75f, 0.51f });
+				vecCapsulePoints.push_back({ -0.87f, 0.0f, 0.51f });
+				vecCapsulePoints.push_back({ -0.44f, -0.76f, 0.51f });
+				vecCapsulePoints.push_back({ 0.43f, -0.76f, 0.51f });
+				break;
+			case 3:
+				vecCapsulePoints.push_back({ 1.0f, 0.0f, 0.01f });
+				vecCapsulePoints.push_back({ 0.49f, 0.86f, 0.01f });
+				vecCapsulePoints.push_back({ -0.51f, 0.86f, 0.01f });
+				vecCapsulePoints.push_back({ -1.0f, 0.0f, 0.01f });
+				vecCapsulePoints.push_back({ -0.51f, -0.87f, 0.01f });
+				vecCapsulePoints.push_back({ 0.49f, -0.87f, 0.01f });
+				break;
+			case 4:
+				vecCapsulePoints.push_back({ 1.0f, 0.0f, -0.02f });
+				vecCapsulePoints.push_back({ 0.49f, 0.86f, -0.02f });
+				vecCapsulePoints.push_back({ -0.51f, 0.86f, -0.02f });
+				vecCapsulePoints.push_back({ -1.0f, 0.0f, -0.02f });
+				vecCapsulePoints.push_back({ -0.51f, -0.87f, -0.02f });
+				vecCapsulePoints.push_back({ 0.49f, -0.87f, -0.02f });
+				break;
+			case 5:
+				vecCapsulePoints.push_back({ 0.86f, 0.0f, -0.51f });
+				vecCapsulePoints.push_back({ 0.43f, 0.75f, -0.51f });
+				vecCapsulePoints.push_back({ -0.44f, 0.75f, -0.51f });
+				vecCapsulePoints.push_back({ -0.87f, 0.0f, -0.51f });
+				vecCapsulePoints.push_back({ -0.44f, -0.76f, -0.51f });
+				vecCapsulePoints.push_back({ 0.43f, -0.76f, -0.51f });
+				break;
+			case 6:
+				vecCapsulePoints.push_back({ 0.51f, 0.0f, -0.87f });
+				vecCapsulePoints.push_back({ 0.25f, 0.44f, -0.87f });
+				vecCapsulePoints.push_back({ -0.26f, 0.44f, -0.87f });
+				vecCapsulePoints.push_back({ -0.51f, 0.0f, -0.87f });
+				vecCapsulePoints.push_back({ -0.26f, -0.45f, -0.87f });
+				vecCapsulePoints.push_back({ 0.25f, -0.45f, -0.87f });
+				break;
+			case 7:
+				vecCapsulePoints.push_back({ 0.0f, 0.0f, -1.0f });
+				break;
+			default:
+				break;
+			}
+		}
+
+		if (vecCapsulePoints.empty())
+			return;
+
+		Vector vecLen = vecCapsuleCenters[1] - vecCapsuleCenters[0];
+		Vector vecCenterCapsuleVert = vecCapsulePoints[0];
+
+		vecCenterCapsuleVert = vecCenterCapsuleVert.Rotate(matCapsuleRotationSpace);
+		vecCenterCapsuleVert = vecCenterCapsuleVert.Rotate(matCapsuleSpace);
+
+		vecCenterCapsuleVert *= flRadius * flScale;
+
+		if (vecCapsulePoints[0].z > 0.f)
+			vecCenterCapsuleVert += vecLen;
+
+		for (size_t i = 0; i < vecCapsulePoints.size(); i++)
+		{
+			Vector vecCapsuleVert = vecCapsulePoints[i];
+
+			vecCapsuleVert = vecCapsuleVert.Rotate(matCapsuleRotationSpace);
+			vecCapsuleVert = vecCapsuleVert.Rotate(matCapsuleSpace);
+
+			vecCapsuleVert *= flRadius * flScale;
+
+			if (vecCapsulePoints[i].z > 0.f)
+				vecCapsuleVert += vecLen;
+
+			GameTrace_t trace = {};
+			TraceFilter_t filter = { TRACE_MASK_AUTOWALL, Globals::m_pLocalPlayerPawn, nullptr, 3 };
+			Ray_t ray = {};
+
+			Interfaces::m_pGameTraceManager->ClipRayToEntity(&ray, LocalPlayerData::m_vecEyePosition, vecCapsuleVert + vecCapsuleCenters[0], pPlayer, &filter, &trace);
+			if (trace.m_pHitEntity != pPlayer || trace.GetHitboxId() != nHitboxIndex)
+				continue;
+
+			AddMultipoints(vecCapsuleVert + vecCapsuleCenters[0], vecCenterCapsuleVert + vecCapsuleCenters[0], iMultiPointsCount, nGroup == static_cast<int>(EHitgroups::HITGROUP_HEAD) ? flRadius * flHeadScale : flRadius * flBodyScale, flRadius);
+		}
+	}
+	else
+	{
+		Matrix3x4_t matrixTemp;
+		Math::AngleMatrix(pRecord->m_angRotation, matrixTemp);
+
+		Matrix3x4_t pCachedBones;
+		Math::ConcatTransforms(pRecord->m_Matrix[nBoneIndex].TranslateToMatrix3x4(), matrixTemp, pCachedBones);
+
+		Vector vOrigin; QAngle angAngles;
+		Math::MatrixAngles(matrixTemp, angAngles, vOrigin);
+
+		Matrix3x4_t fRotateMatrix;
+		Math::AngleMatrix(angAngles, fRotateMatrix);
+
+		Vector pVerts[8];
+		Vector vecPos;
+
+		for (int i = 0; i < 8; ++i)
+		{
+			vecPos[0] = (i & 0x1) ? pHitbox->m_vecMaxBounds[0] : pHitbox->m_vecMinBounds[0];
+			vecPos[1] = (i & 0x2) ? pHitbox->m_vecMaxBounds[1] : pHitbox->m_vecMinBounds[1];
+			vecPos[2] = (i & 0x4) ? pHitbox->m_vecMaxBounds[2] : pHitbox->m_vecMinBounds[2];
+
+			pVerts[i] = vecPos.Rotate(fRotateMatrix);
+			pVerts[i] += vOrigin;
+
+			GameTrace_t trace = {};
+			TraceFilter_t filter = { TRACE_MASK, Globals::m_pLocalPlayerPawn, nullptr, 4 };
+			Ray_t ray = {};
+
+			Interfaces::m_pGameTraceManager->ClipRayToEntity(&ray, LocalPlayerData::m_vecEyePosition, pVerts[i], pPlayer, &filter, &trace);
+			if (trace.m_pHitEntity != pPlayer || trace.GetHitboxId() != nHitboxIndex)
+				continue;
+
+			AddMultipoints(pVerts[i], pVerts[i], iMultiPointsCount);
+		}
+	}
+}
+
+void GetRemovedAimpunchRebuilt(C_CSPlayerPawn* pPawn, QAngle* angAimpunch, float flUnknown, bool bUnknown)
+{
+	unsigned int v8[8]; // [rsp+20h] [rbp-58h] BYREF
+	BYTE v9[8]; // [rsp+28h] [rbp-50h] BYREF
+	BYTE v10[48]; // [rsp+30h] [rbp-48h] BYREF
+	unsigned int v11; // [rsp+88h] [rbp+10h] BYREF
+
+	using sub_E47D10 = void(__fastcall*)(void* a1, unsigned int* a2, unsigned int* a3);
+	static sub_E47D10 osub_E47D10 = reinterpret_cast<sub_E47D10>(Memory::FindPattern(CLIENT_DLL, X("48 89 5C 24 ? 57 48 83 EC ? 45 8B 10")));
+	osub_E47D10(v9, &v11, v8);
+
+	using sub_5644D0 = void(__fastcall*)(C_CSPlayerPawn* a1, QAngle* a2, unsigned int* a3, bool bUnknown);
+	static sub_5644D0 osub_5644D0 = reinterpret_cast<sub_5644D0>(Memory::FindPattern(CLIENT_DLL, X("48 8B C4 44 88 48 ? 55 56")));
+	osub_5644D0(pPawn, angAimpunch, &v11, bUnknown);
+
+	//Logging::Print("X: " + std::to_string(angAimpunch->x) + "Y: " + std::to_string(angAimpunch->y) + "Z: " + std::to_string(angAimpunch->z));
+
+	/*return angAimpunch;*/
+}
+
+QAngle GetAimpunch() 
+{
+	QAngle aimp;
+	using fnGetRemovedAimpunch = void(__fastcall*)(void*, QAngle*, float, bool);
+	static fnGetRemovedAimpunch oGetRemovedAimpunch = reinterpret_cast<fnGetRemovedAimpunch>(Memory::GetAbsoluteAddress(Memory::FindPattern(CLIENT_DLL, X("E8 ? ? ? ? 48 8D 4E ? 48 8D 54 24 ? E8 ? ? ? ? F2 0F 10 44 24")), 0x1, 0x0));
+
+	oGetRemovedAimpunch(Globals::m_pLocalPlayerPawn, &aimp, 0.0f, true);
+	//GetRemovedAimpunchRebuilt(Globals::m_pLocalPlayerPawn, &aimp, 0.0f, true);
+	return aimp;
+	/*QAngle aimp{ 0,0,0 };
+
+	if (!Ragebot::m_cRagebot.ActiveWeapon)s
+		return QAngle{ aimp.x, aimp.y, aimp.z };
+
+	if (Globals::m_pLocalPlayerPawn->m_aimPunchCache().m_nSize > 0 && Globals::m_pLocalPlayerPawn->m_aimPunchCache().m_nSize < 0xFFFF)
+		aimp = Globals::m_pLocalPlayerPawn->m_aimPunchCache().At(Globals::m_pLocalPlayerPawn->m_aimPunchCache().m_nSize - 1);
+
+	return QAngle{ aimp.x, aimp.y, aimp.z };*/
+}
+
+ShootPoint_t Ragebot::GetShootPoint(LagRecord_t* pRecord, CModelState pModel)
+{
+	ShootPoint_t shootPoint;
+	float flMaxDamage = 0.f;
+	const Vector vecAimPoint = LocalPlayerData::m_vecEyePosition;
+
+	for (const auto& hitbox : m_cRagebot.m_vecHitboxes)
+	{
+		vecMultiPoints.clear();
+
+		Multipoints(pRecord, pModel.m_modelHandle->GetHitBox(static_cast<EHitBoxes>(hitbox)), pRecord->m_pPawn, hitbox);
+
+		if (vecMultiPoints.empty())
+			continue;
+
+		for (const auto& point : vecMultiPoints)
+		{
+			//Interfaces::m_pClient->GetDebugOverlay()->AddTextOverlay(point.m_vecPoint, 0.01, ".");
+
+			Vector vecNewPoint = ExtrapolateEnemyPos(point.m_vecPoint, pRecord->m_pPawn);
+
+			const float flDamage = Autowall::CalculateDamage(pRecord->m_pPawn, m_cRagebot.ActiveWeapon, vecNewPoint);
+
+			if (flDamage > flMaxDamage/* && flDamage > m_cRagebot.m_iMinDamage*/ /*Config::i(g_Variables.m_Ragebot.m_iMinDamage)*/)
+			{
+				shootPoint.flDamage = flDamage;
+				shootPoint.vecAimPos = vecNewPoint;
+				shootPoint.pRecord = pRecord;
+				shootPoint.hitbox = hitbox;
+				flMaxDamage = flDamage;
+			}
+		}
+	}
+	
+	return shootPoint;
+}
+
+bool Ragebot::GetEntities()
+{
+	m_vecRageEntities.clear();
+	float closestDistance = FLT_MAX;
+
+	for (EntityObject_t& object : EntityList::vecEntities)
+	{
+		if (object.m_eType != ENTITY_PLAYER)
+			continue;
+
+		CCSPlayerController* pController = static_cast<CCSPlayerController*>(object.m_pEntity);
+		if (!pController || !pController->m_bPawnIsAlive())
+			continue;
+
+		C_CSPlayerPawn* pPawn = pController->m_hPlayerPawn().Get();
+		if (!pPawn|| !pPawn->IsEnemy(Globals::m_pLocalPlayerPawn))
+			continue;
+
+		ImVec2 screenPos;
+		ImVec2 screenCenter = ImGui::GetIO().DisplaySize / 2;
+
+		LagCompInfo_t& lagRecords = Lagcomp::m_arrRecords.at(object.m_nIndex);
+		if (lagRecords.m_deqRecords.empty())
+			continue;
+
+		const CModelState pModel = pPawn->m_pGameSceneNode()->GetSkeletonInstance()->m_modelState();
+
+		LagRecord_t* pFirstRecord = lagRecords.GetFirstRecord();
+		LagRecord_t* pLastRecord = lagRecords.GetLastRecord();
+		if (!pFirstRecord || !pLastRecord)
+			continue;
+
+		auto pBackupRecord = std::make_unique<LagRecord_t>(pPawn);
+
+		if (Config::b(g_Variables.m_Ragebot.m_bDuckPeekAssist) && Input::HandleInput(Config::kb(g_Variables.m_Ragebot.m_kbDuckPeekAssist)))
+		{
+			
+			Vector vecOldEyePos;
+			vecOldEyePos.x = /*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos().x;
+			vecOldEyePos.y = /*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos().y;
+			vecOldEyePos.z = /*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos().z + 18;
+
+			//Interfaces::m_pClient->GetDebugOverlay()->AddBoxOverlay(vecOldEyePos, Vector(-2.f, -2.f, -2.f), Vector(2.f, 2.f, 2.f), QAngle(0.0f, 0.0f, 0.0f), Color(0, 0, 255, 80), 0.1f);
+
+			if (!m_cRagebot.bCanShootDuckPeekAssist)
+				Globals::m_pCmd->m_nButtons.m_nValue |= IN_DUCK; // Globals::m_pLocalPlayerPawn->m_pMovementServices()->m_flDuckAmount() = 18;
+
+			
+
+			if (Ragebot::IsPlayerVisible(pFirstRecord, pModel, pPawn, vecOldEyePos))
+			{
+				m_cRagebot.bCanShootDuckPeekAssist = true;
+			}
+			else
+			{
+				m_cRagebot.bCanShootDuckPeekAssist = false;
+			}
+		}
+
+		if (!m_cRagebot.ActiveWeapon->CanPrimaryAttack(m_cRagebot.ActiveWeapon->GetWeaponBaseVData()->m_WeaponType(), TICKS_TO_TIME(Globals::m_pLocalPlayerController->m_nTickBase())))
+			continue;
+
+		if (Config::b(g_Variables.m_Ragebot.m_bPredictiveAutostop))
+		{
+			/*bool bFirstAutostop = */Ragebot::ShouldAutostop(pFirstRecord, pPawn, pModel, Globals::m_pCmd);
+			/*bool bLastAutostop = */Ragebot::ShouldAutostop(pLastRecord, pPawn, pModel, Globals::m_pCmd);
+
+			/*if (!bFirstAutostop && !bLastAutostop)
+				continue;*/
+		}
+
+		if (Config::b(g_Variables.m_Misc.m_bPerformanceMode)/* && !Config::b(g_Variables.m_Ragebot.m_bPredictiveAutostop)*/)
+		{
+			bool bFirstShouldPoint = Ragebot::IsPlayerVisible(pFirstRecord, pModel, pPawn, /*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos());
+			bool bLastShouldPoint = Ragebot::IsPlayerVisible(pLastRecord, pModel, pPawn, /*Globals::m_pLocalPlayerPawn->GetEyePosition(true)*/g_PredictionSystem->GetEyePos());
+
+			if (!bFirstShouldPoint && !bLastShouldPoint)
+				continue;
+		}	
+
+		pFirstRecord->Apply(pPawn);
+		ShootPoint_t firstAimPos = GetShootPoint(pFirstRecord, pModel);
+
+		pLastRecord->Apply(pPawn);
+		ShootPoint_t lastAimPos = GetShootPoint(pLastRecord, pModel);
+
+		pBackupRecord->Restore(pPawn);
+
+		if (firstAimPos.flDamage <= 0.0f && lastAimPos.flDamage <= 0.0f)
+			continue;
+
+		ShootPoint_t hBestShootPoint = (firstAimPos.flDamage >= lastAimPos.flDamage) ? firstAimPos : lastAimPos;
+
+		/*if (bestShootPoint.pRecord == pFirstRecord)
+		{
+			m_cRagebot.bShouldPSilent = true;
+		}
+		else if (bestShootPoint.pRecord == pLastRecord)
+		{
+			m_cRagebot.bShouldPSilent = false;
+		}*/
+
+		RageEntity_t hTempEntity;
+
+		if (pPawn->m_iHealth() < m_cRagebot.m_iMinDamage)
+		{
+			int iNewMinDamage = (pPawn->m_iHealth() + 5);;
+			hBestShootPoint.flDamage = iNewMinDamage;
+			m_cRagebot.m_iMinDamage = iNewMinDamage;
+		}
+		
+		hTempEntity.hitbox = hBestShootPoint.hitbox;
+		hTempEntity.pEntity = pPawn;
+		hTempEntity.flHealth = pPawn->m_iHealth();
+		hTempEntity.flDamage = hBestShootPoint.flDamage;
+		hTempEntity.vecCalcAimPos = Math::CalcAngle(Globals::m_pLocalPlayerPawn->GetEyePosition(true), hBestShootPoint.vecAimPos);
+		hTempEntity.vecAimPosNonCalc = hBestShootPoint.vecAimPos;
+		hTempEntity.pRecord = hBestShootPoint.pRecord;
+		hTempEntity.m_iIndex = object.m_nIndex;
+
+		Ragebot::m_vecRageEntities.push_back(hTempEntity);
+	}
+
+	return !m_vecRageEntities.empty();
+}
+
+void Ragebot::SetupHitboxes() 
+{
+	m_cRagebot.m_vecHitboxes.clear();
+
+	if (Convar::mp_damage_headshot_only->GetBool())
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(EHitBoxes::HITBOX_HEAD);
+		return;
+	}
+
+	if (LocalPlayerData::m_pWeaponBaseVData->m_WeaponType() == WEAPONTYPE_KNIFE && LocalPlayerData::m_nWeaponDefinitionIndex != WEAPON_ZEUS_X27)
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(EHitBoxes::HITBOX_UPPER_CHEST);
+		m_cRagebot.m_vecHitboxes.emplace_back(EHitBoxes::HITBOX_CHEST);
+		m_cRagebot.m_vecHitboxes.emplace_back(EHitBoxes::HITBOX_PELVIS);
+		m_cRagebot.m_vecHitboxes.emplace_back(EHitBoxes::HITBOX_HEAD);
+		return;
+	}
+
+	// head
+	if (Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes).at(EConfigHitBoxes::HB_HEAD))
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_HEAD);
+	}
+
+	/*if (Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes).at(EConfigHitBoxes::HB_NECK))
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_NECK);
+	}*/
+
+	// chest
+	if (Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes).at(EConfigHitBoxes::HB_CHEST))
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_THORAX);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_CHEST);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_UPPER_CHEST);
+	}
+
+	if (Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes).at(EConfigHitBoxes::HB_STOMACH))
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_STOMACH);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_PELVIS);
+	}
+
+	if (Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes).at(EConfigHitBoxes::HB_ARMS))
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_LEFT_HAND);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_LEFT_UPPER_ARM);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_LEFT_FOREARM);
+
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_RIGHT_HAND);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_RIGHT_UPPER_ARM);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_RIGHT_FOREARM);
+	}
+
+	if (Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes).at(EConfigHitBoxes::HB_LEGS))
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_LEFT_THIGH);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_LEFT_CALF);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_RIGHT_THIGH);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_RIGHT_CALF);
+	}
+
+	if (Config::vb(g_Variables.m_Ragebot.m_vecHitBoxes).at(EConfigHitBoxes::HB_FEET))
+	{
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_LEFT_FOOT);
+		m_cRagebot.m_vecHitboxes.emplace_back(HITBOX_RIGHT_FOOT);
+	}
+}
+
+int GetMinDamage(int iMinDamage)
+{
+	return iMinDamage;
+}
+
+
+void Ragebot::CreateMove(C_CSPlayerPawn* pLocal, CCSGOInput* pInput, CUserCmd* pCmd)
+{
+	if (!Config::b(g_Variables.m_Ragebot.m_bRagebotEnabled))
+		return;
+
+	if (!Interfaces::m_pEngine->IsConnected() || !Interfaces::m_pEngine->IsInGame())
+		return;
+
+	if (!Globals::m_pLocalPlayerController|| !Globals::m_pLocalPlayerPawn)
+		return;
+
+	if (!pInput || !pCmd)
+		return;
+
+	if (!Globals::m_pLocalPlayerController->m_bPawnIsAlive())
+		return;
+
+	Ragebot::SetupHitboxes();
+	m_cRagebot.ActiveWeapon = Interfaces::m_pGameResourceService->pGameEntitySystem->Get<C_CSWeaponBaseGun>(Globals::m_pLocalPlayerPawn->m_pWeaponServices()->m_hActiveWeapon());
+	m_cRagebot.ExtrapolatedEyePos = GetExtrapolatedEyePos();
+	m_cRagebot.bShouldPSilent = false;
+
+	//if (!Globals::m_pLocalPlayerController->CanShoot(m_cRagebot.ActiveWeapon)) return;
+
+	if (!m_cRagebot.ActiveWeapon)
+		return;
+
+	m_cRagebot.bIsWeaponTaser = m_cRagebot.ActiveWeapon->m_AttributeManager()->m_Item()->m_iItemDefinitionIndex() == WEAPON_ZEUS_X27;
+	m_cRagebot.bIsWeaponKnife = m_cRagebot.ActiveWeapon->IsKnife();
+
+	if (Config::b(g_Variables.m_Ragebot.m_bTaserBot) && m_cRagebot.bIsWeaponTaser)
+	{
+		Ragebot::TaserBot();
+	}
+
+	if (Config::b(g_Variables.m_Ragebot.m_bKnifeBot) && m_cRagebot.bIsWeaponKnife)
+	{
+		Ragebot::KnifeBot();
+	}
+
+	if (m_cRagebot.bIsWeaponTaser || m_cRagebot.bIsWeaponKnife)
+		return;
+
+	m_cRagebot.m_iMinDamage = GetMinDamage(Config::i(g_Variables.m_Ragebot.m_iMinDamage));
+	if (Input::HandleInput(Config::kb(g_Variables.m_Ragebot.m_iMinDamageOverrideKey)))
+	{
+		m_cRagebot.m_iMinDamage = Config::i(g_Variables.m_Ragebot.m_iMinDamageOverride);
+	}
+
+	if (!Ragebot::GetEntities()) return;
+
+	float maxDamage = -1.0f;
+	for (const auto& entity : m_vecRageEntities) {
+		if (entity.flDamage > maxDamage) {
+			maxDamage = entity.flDamage;
+			Ragebot::m_BestEntity = entity;
+		}
+	}
+
+	if (!Ragebot::m_BestEntity.pEntity) return;
+
+	if (Ragebot::m_BestEntity.flDamage < m_cRagebot.m_iMinDamage) return;
+
+	if (!Config::b(g_Variables.m_Ragebot.m_bPredictiveAutostop) && Config::b(g_Variables.m_Ragebot.m_bAutostop))
+		Ragebot::AutoStop(pLocal, m_cRagebot.ActiveWeapon, pCmd);
+
+	if (Config::b(g_Variables.m_Ragebot.m_bAutoscope) &&
+		m_cRagebot.ActiveWeapon &&
+		m_cRagebot.ActiveWeapon->GetWeaponBaseVData()->m_WeaponType() == WEAPONTYPE_SNIPER_RIFLE)
+	{
+		bool bNoSpreadActive = Config::b(g_Variables.m_Ragebot.m_bNoSpread);
+		bool bNoSpreadKeyActive = bNoSpreadActive && Input::HandleInput(Config::kb(g_Variables.m_Ragebot.m_iNoSpreadKey));
+
+		if (!bNoSpreadKeyActive) {
+			if (Globals::m_pLocalPlayerPawn && !Globals::m_pLocalPlayerPawn->m_bIsScoped() && !Globals::m_pLocalPlayerPawn->m_bResumeZoom()) {
+				pCmd->m_nButtons.m_nValue |= IN_ZOOM;
+			}
+		}
+	}
+
+	std::unique_ptr<LagRecord_t> pBackupRecord = std::make_unique<LagRecord_t>(Ragebot::m_BestEntity.pEntity);
+	Ragebot::m_BestEntity.pRecord->Apply(Ragebot::m_BestEntity.pEntity);
+	const bool bIsAccurate = Ragebot::IsAccurate(Config::i(g_Variables.m_Ragebot.m_iHitchance));
+	pBackupRecord->Restore(Ragebot::m_BestEntity.pEntity);
+
+	if (!bIsAccurate) return;
+
+	Ragebot::m_BestEntity.vecCalcAimPos -= GetAimpunch();
+
+	if (Config::b(g_Variables.m_Ragebot.m_bNoSpread) && Input::HandleInput(Config::kb(g_Variables.m_Ragebot.m_iNoSpreadKey)))
+	{
+		NoSpreadResult NoSpreadResult = NoSpread::NoSpread(Ragebot::m_BestEntity.vecCalcAimPos);
+		if (!NoSpreadResult.bFound)
+		{
+			return;
+		}
+		Ragebot::m_BestEntity.vecCalcAimPos = NoSpreadResult.angAdjusted;
+	}
+
+	bool bIsLeftAntiaim = Input::HandleInput(Config::kb(g_Variables.m_Ragebot.m_iLeftAntiaimKeybind)) && Config::b(g_Variables.m_Ragebot.m_bAntiaim);
+
+	/*if (m_cRagebot.bShouldPSilent)
+	{
+		pMutableViewAngles->set_x(179.f);
+
+		for (int i = 0; i < pCmd->m_csgoUserCmd.input_history_size(); i++) {
+			auto container = pCmd->m_csgoUserCmd.mutable_input_history(i);
+			if (container) {
+				container->set_player_tick_count(g_PredictionSystem->predictionData.nShootTick);
+			}
+		}
+	}
+	else
+	{
+		pMutableViewAngles->set_x(Ragebot::m_BestEntity.vecCalcAimPos.x);
+		pMutableViewAngles->set_y(Ragebot::m_BestEntity.vecCalcAimPos.y);
+		pMutableViewAngles->set_z(Ragebot::m_BestEntity.vecCalcAimPos.z);
+	}*/
+
+	if (Config::b(g_Variables.m_Ragebot.m_bAutoShoot))
+	{
+		pCmd->m_csgoUserCmd.set_attack1_start_history_index(pCmd->m_csgoUserCmd.input_history_size() - 1);
+		pCmd->m_csgoUserCmd.set_attack3_start_history_index(pCmd->m_csgoUserCmd.input_history_size() - 1);
+		
+		pCmd->m_nButtons.m_nValue |= IN_ATTACK;
+		pCmd->m_nButtons.m_nValueChanged |= IN_ATTACK;
+	}
+
+	m_cRagebot.bCanShootDuckPeekAssist = false;
+
+	Lagcomp::m_AimbotLagCompData = AimbotLagCompData_t(Ragebot::m_BestEntity.pRecord, Ragebot::m_BestEntity.pRecord->m_flSimulationTime, Ragebot::m_BestEntity.vecCalcAimPos);
+
+	//Logging::Print("DamageDone: " + std::to_string(Ragebot::m_BestEntity.flDamage));
+
+	pCmd->SetSubTickAngle(Ragebot::m_BestEntity.vecCalcAimPos);
+
+	if (!Config::b(g_Variables.m_Ragebot.m_bSilentAim))
+		Interfaces::m_pInput->SetViewAngle(Ragebot::m_BestEntity.vecCalcAimPos);
+}
